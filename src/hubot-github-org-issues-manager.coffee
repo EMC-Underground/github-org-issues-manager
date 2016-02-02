@@ -11,6 +11,7 @@
 #   hubot submit bug for <repo> as <issue> - submits a bug to a given repo; issue is a string
 #   hubot submit enhancement for <repo> as <issue> - submits a bug to a given repo; issue is a string
 #   hubot submit question for <repo> as <issue> - submits a bug to a given repo; issue is a string
+#   hubot my github username is <username> - sets the github username for a user
 #
 # Notes:
 #   It is highly recommended that you create a seperate user on your org for the bot. This will allow better access control.
@@ -23,11 +24,23 @@ http = require 'http'
 base-url = "https://api.github.com/"
 
 errors = {
-  'github-org':"This bot has no Github Org to talk with...please specify one.",
-  'github-access-token':"This bot does not have an access token for the specified org."
+  'github-org':"I have no Github Org to talk with...please specify one.",
+  'github-access-token':"I do not have an access token for the specified org."
+  'github-usernames': "I do not have any github usernames, please specify yours."
+  'github-uesrname': "I do not have your username on file, please specify one."
 }
 
 module.exports = (robot) ->
+  # Set a user's github account name
+  robot.respond /my github username is (\w+)/i, (msg) ->
+    usernames = robot.brain.get('github-names')
+    if usernames = null
+      usernames = {}
+      robot.brain.set('github-names', usernames)
+    username = msg.match[1]
+    usernames[msg.envelope.user.name] = username
+    msg.send "Your github username is now set to #{usernames[msg.envelope.user.name]}"
+
   # List all known repos
   robot.respond /list(\sall)? repos/i, (msg) ->
 
@@ -124,21 +137,32 @@ module.exports = (robot) ->
     issue_title = msg.match[4]
     # Only run the code if the org exists
     if org?
-      msg.reply "Submitting issue..."
-      payload = {"title": issue_title,
-                  "body", "Courtesy of @#{username}",
-                  "labels": [issue_type]}
-      robot.http(bas-url + "/repos/#{org}/#{repo_name}/issues")
-        # Pass our auth token
-        .header('Authorization', 'token #{token}')
-        .header('Content-Type', 'application/json')
-        # Make the call
-        .post(JSON.stringify(payload)) (err, res, body) ->
-          if err
-            robot.logger.info "Encountered an error: #{err}"
-            msg.send "Encountered an error: #{err}"
-            return
-          else
-            msg.send "Your #{issue_type} has been submited. #{body['url']}"
+      # The submitee should have a github account
+      # Get the github list
+      usernames = robot.brain.get('github-names')
+      # Continue if we got the list
+      if usernames?
+        # Verify a username exists for the user
+        if usernames[msg.envelope.user.name]?
+          msg.reply "Submitting issue..."
+          payload = {"title": issue_title,
+                      "body", "Courtesy of @#{usernames[msg.envelope.user.name]}",
+                      "labels": [issue_type]}
+          robot.http(bas-url + "/repos/#{org}/#{repo_name}/issues")
+            # Pass our auth token
+            .header('Authorization', 'token #{token}')
+            .header('Content-Type', 'application/json')
+            # Make the call
+            .post(JSON.stringify(payload)) (err, res, body) ->
+              if err
+                robot.logger.info "Encountered an error: #{err}"
+                msg.send "Encountered an error: #{err}"
+                return
+              else
+                msg.send "Your #{issue_type} has been submited. #{body['url']}"
+        else
+          msg.reply errors['github-username']
+      else
+        msg.reply errors['github-usernames']
     else
       msg.reply errors['github-org']
