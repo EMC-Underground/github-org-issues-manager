@@ -66,21 +66,48 @@ module.exports = (robot) ->
 
     # Get the org that the bot is assigned to
     org = robot.brain.get('github_org') or process.env.HUBOT_GITHUB_ORG
-    repo = msg.match[1]
+    token = robot.brain.get('github_user_token') or process.env.HUBOT_GITHUB_USER_ACCESS_TOKEN
+    repo_name = msg.match[1].lower()
     # Only run the code if the org exists
     if org?
       msg.reply "Fetching current issues for #{repo}..."
-      robot.http(base-url)
+
+      # First fetch the repos
+      robot.http(base-url + "/orgs/#{org}/repos")
         # Pass our auth token
         .header('Authorization', 'token #{token}')
         # Make the call
         .get()) (err, res, body) ->
           if err
-            robot.logger.info "Encountered an error: #{err}"
-            msg.send "Encountered an error: #{err}"
+            robot.logger.info "Encountered an error getting repos: #{err}"
+            msg.send "Encountered an error getting repos: #{err}"
             return
           else
-            msg.send "#{JSON.stringify(body, null, 2)}"
+            for repo in body
+              if repo['name'].toLowerCase() is repo_name
+                if repo['open_issues'] < 1
+                  msg.send "No open issues"
+                  break
+                else
+                  robot.http(base-url + "/repos/#{org}/#{repo_name}/issues")
+                    # Pass our auth token
+                    .header('Authorization', 'token #{token}')
+                    # Make the call
+                    .get() (err2, res2, body2) ->
+                      if err2
+                        robot.logger.info "Encountered an error getting the repo's issues: #{err2}"
+                        msg.send "Encountered an error getting the repo's issues: #{err2}"
+                        return
+                      else
+                        payload = {}
+                        for issue in body2
+                          payload[issue['title']] = {"issue_number": issue['number'],
+                                                      "submittee": issue['user']['login'],
+                                                      "state": issue['state'],
+                                                      "comment_count": issue['comments'],
+                                                      "Description": issue['body']}
+                        msg.send "#{JSON.stringify(payload, null, 2)}"
+                        break
     else
       msg.reply errors['github-org']
 
@@ -89,8 +116,9 @@ module.exports = (robot) ->
 
     # Get the org that the bot is assigned to
     org = robot.brain.get('github_org') or process.env.HUBOT_GITHUB_ORG
-    repo = msg.match[2]
-    issueTitle = msg.match[3]
+    token = robot.brain.get('github_user_token') or process.env.HUBOT_GITHUB_USER_ACCESS_TOKEN
+    repo_name = msg.match[2]
+    issue_title = msg.match[3]
     # Only run the code if the org exists
     if org?
       msg.reply "Fetching repos..."
