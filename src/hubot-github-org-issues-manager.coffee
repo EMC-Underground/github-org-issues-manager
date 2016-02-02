@@ -7,6 +7,8 @@
 #
 # Commands:
 #   hubot list repos - lists github repos that are available for issue submission
+#   hubot list issues for <repo> - list all the issues for a given repo
+#   hubot submit issue for <repo> as <issue> - submits an issue to a given repo; issue is a string
 #
 # Notes:
 #   It is highly recommended that you create a seperate user on your org for the bot. This will allow better access control.
@@ -16,15 +18,87 @@
 
 http = require 'http'
 
+base-url = "https://api.github.com/"
+
+errors = {
+  'github-org':"This bot has no Github Org to talk with...please specify one.",
+  'github-access-token':"This bot does not have an access token for the specified org."
+}
+
 module.exports = (robot) ->
   # List all known repos
   robot.respond /list(\sall)? repos/i, (msg) ->
+
+    # Get the org that the bot is assigned to
     org = robot.brain.get('github_org') or process.env.HUBOT_GITHUB_ORG
+    token = robot.brain.get('github_user_token') or process.env.HUBOT_GITHUB_USER_ACCESS_TOKEN
+    # Only run the code if the org exists
+    if org?
+      msg.reply "Fetching repos..."
+
+      # Setup HTTP call
+      robot.http(base-url + "/orgs/#{org}/repos")
+        # Pass our auth token
+        .header('Authorization', 'token #{token}')
+        # Make the call
+        .get() (err, res, body) ->
+          if err
+            robot.logger.info "Encountered an error: #{err}"
+            msg.send "Encountered an error: #{err}"
+            return
+          else
+            payload = {}
+            for repo in body
+              payload[repo['name']] = {"id": repo['id'],
+                                        "full_name": repo['full_name'],
+                                        "stargazer": repo['stargazers_count'],
+                                        "watchers": repo['watchers_count'],
+                                        "forks": repo['forks'],
+                                        "primary_language": repo['language'],
+                                        "issue_count": repo['open_issues_count']}
+            msg.send "#{JSON.stringify(payload, null, 2)}"
+    else
+      msg.reply errors['github-org']
+
+
+  # Get the issues for a specific repo
+  robot.respond /list issues for (.+)/i, (msg) ->
+
+    # Get the org that the bot is assigned to
+    org = robot.brain.get('github_org') or process.env.HUBOT_GITHUB_ORG
+    repo = msg.match[1]
+    # Only run the code if the org exists
+    if org?
+      msg.reply "Fetching current issues for #{repo}..."
+      robot.http(base-url)
+        # Pass our auth token
+        .header('Authorization', 'token #{token}')
+        # Make the call
+        .get()) (err, res, body) ->
+          if err
+            robot.logger.info "Encountered an error: #{err}"
+            msg.send "Encountered an error: #{err}"
+            return
+          else
+            msg.send "#{JSON.stringify(body, null, 2)}"
+    else
+      msg.reply errors['github-org']
+
+  # Submit an issue for a repo
+  robot.respond /submit(\san)? issue for (.+) as (.+)/i, (msg) ->
+
+    # Get the org that the bot is assigned to
+    org = robot.brain.get('github_org') or process.env.HUBOT_GITHUB_ORG
+    repo = msg.match[2]
+    issueTitle = msg.match[3]
+    # Only run the code if the org exists
     if org?
       msg.reply "Fetching repos..."
       payload = {}
       robot.http(url)
-        .header('Header-type', 'header-var')
+        # Pass our auth token
+        .header('Authorization', 'token #{token}')
+        # Make the call
         .post(JSON.stringify(payload)) (err, res, body) ->
           if err
             robot.logger.info "Encountered an error: #{err}"
@@ -32,3 +106,5 @@ module.exports = (robot) ->
             return
           else
             msg.send "#{JSON.stringify(body, null, 2)}"
+    else
+      msg.reply errors['github-org']
