@@ -8,7 +8,9 @@
 # Commands:
 #   hubot list repos - lists github repos that are available for issue submission
 #   hubot list issues for <repo> - list all the issues for a given repo
-#   hubot submit issue for <repo> as <issue> - submits an issue to a given repo; issue is a string
+#   hubot submit bug for <repo> as <issue> - submits a bug to a given repo; issue is a string
+#   hubot submit enhancement for <repo> as <issue> - submits a bug to a given repo; issue is a string
+#   hubot submit question for <repo> as <issue> - submits a bug to a given repo; issue is a string
 #
 # Notes:
 #   It is highly recommended that you create a seperate user on your org for the bot. This will allow better access control.
@@ -76,19 +78,19 @@ module.exports = (robot) ->
       robot.http(base-url + "/orgs/#{org}/repos")
         # Pass our auth token
         .header('Authorization', 'token #{token}')
-        # Make the call
+        # Make the call to gather repos
         .get()) (err, res, body) ->
-          if err
+          if err # Stop if we couldn't get repos
             robot.logger.info "Encountered an error getting repos: #{err}"
             msg.send "Encountered an error getting repos: #{err}"
             return
-          else
-            for repo in body
+          else # We got'em
+            for repo in body # We want to search our list for the specified one
               if repo['name'].toLowerCase() is repo_name
-                if repo['open_issues'] < 1
+                if repo['open_issues'] < 1 # Looks like author did good
                   msg.send "No open issues"
                   break
-                else
+                else # Looks like there's issues. Send them to the user
                   robot.http(base-url + "/repos/#{org}/#{repo_name}/issues")
                     # Pass our auth token
                     .header('Authorization', 'token #{token}')
@@ -112,20 +114,24 @@ module.exports = (robot) ->
       msg.reply errors['github-org']
 
   # Submit an issue for a repo
-  robot.respond /submit(\san)? issue for (.+) as (.+)/i, (msg) ->
+  robot.respond /submit(\sa|\san)? (bug|enhancement|question) for (.+) as (.+)/i, (msg) ->
 
     # Get the org that the bot is assigned to
     org = robot.brain.get('github_org') or process.env.HUBOT_GITHUB_ORG
     token = robot.brain.get('github_user_token') or process.env.HUBOT_GITHUB_USER_ACCESS_TOKEN
-    repo_name = msg.match[2]
-    issue_title = msg.match[3]
+    issue_type = msg.match[2]
+    repo_name = msg.match[3]
+    issue_title = msg.match[4]
     # Only run the code if the org exists
     if org?
-      msg.reply "Fetching repos..."
-      payload = {}
-      robot.http(url)
+      msg.reply "Submitting issue..."
+      payload = {"title": issue_title,
+                  "body", "Courtesy of @#{username}",
+                  "labels": [issue_type]}
+      robot.http(bas-url + "/repos/#{org}/#{repo_name}/issues")
         # Pass our auth token
         .header('Authorization', 'token #{token}')
+        .header('Content-Type', 'application/json')
         # Make the call
         .post(JSON.stringify(payload)) (err, res, body) ->
           if err
@@ -133,6 +139,6 @@ module.exports = (robot) ->
             msg.send "Encountered an error: #{err}"
             return
           else
-            msg.send "#{JSON.stringify(body, null, 2)}"
+            msg.send "Your #{issue_type} has been submited. #{body['url']}"
     else
       msg.reply errors['github-org']
